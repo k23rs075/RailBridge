@@ -162,29 +162,31 @@
 
     <div id="view-settings" class="view">
         <div class="view-content settings-content">
-            
             <div class="setting-section">
+                <div class="sec-title">地図の外観</div>
+                <div class="style-grid">
+                    <div class="style-btn active" onclick="changeMapStyle('dark-v11', this)">Dark</div>
+                    <div class="style-btn" onclick="changeMapStyle('light-v11', this)">Light</div>
+                    <div class="style-btn" onclick="changeMapStyle('streets-v12', this)">Streets</div>
+                    <div class="style-btn" onclick="changeMapStyle('satellite-streets-v12', this)">Satellite</div>
                 </div>
-
-            <div class="setting-section">
-                </div>
-
-            <div class="setting-section">
-                <div class="sec-header">
-                    <svg class="sec-icon" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
-                    <span class="sec-title">ヘルプ & ガイド</span>
-                </div>
-                <a href="/manual" class="btn btn-secondary" style="display:flex; justify-content:center; align-items:center; text-decoration:none; color:white;">
-                    📖 使い方マニュアルを見る
-                </a>
             </div>
-
             <div class="setting-section">
-                <div class="sec-title">システム</div>
-                <button class="del-btn" style="width:100%; padding:15px; border-color:#ff3333;" onclick="resetAllData()">⚠️ データをすべて初期化</button>
-            </div>
+                <div class="sec-title">マップオプション</div>
+                <div class="toggle-row"><span class="toggle-label">交通状況(渋滞)を表示</span><label class="switch"><input type="checkbox" id="traffic-toggle" onchange="toggleTraffic(this.checked)"><span class="slider"></span></label></div>
+                
+                <div style="margin-top:20px;">
+                    <span class="toggle-label">遅延時の回避手段</span>
+                    <div class="mode-selector">
+                        <div class="mode-opt active bike" id="opt-bike" onclick="setEscapeMethod('bike')">🚲 シェアサイクル</div>
+                        <div class="mode-opt" id="opt-bus" onclick="setEscapeMethod('bus')">🚌 バス</div>
+                    </div>
+                </div>
 
-            <div style="color:#666; font-size:12px; text-align:center; margin-top:20px;">RailBridge v10.4</div>
+                <div style="margin-top:20px;"><div class="toggle-row" style="padding-bottom:0; border:none;"><span class="toggle-label">検索範囲</span><span id="range-val-display" class="range-val">500m</span></div><input type="range" min="100" max="2000" step="100" value="500" oninput="updateRangeVal(this.value)" onchange="saveRangeSetting(this.value)"></div>
+            </div>
+            <div class="setting-section"><div class="sec-title">システム</div><button class="del-btn" style="width:100%; padding:15px; border-color:#ff3333;" onclick="resetAllData()">⚠️ データをすべて初期化</button></div>
+            <div style="color:#666; font-size:12px; text-align:center; margin-top:20px;">Rail Escape v10.4</div>
         </div>
     </div>
 </div>

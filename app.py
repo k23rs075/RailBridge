@@ -340,10 +340,7 @@ def api_station_timetable():
         unique.sort(key=lambda x: x['time'])
         return jsonify(unique)
     except: return jsonify([])
-# app.py に追加
-@app.route('/manual')
-def manual():
-    return render_template('manual.html')
+
 # ★【変更点】ここが今回ロジックが変わった場所です
 @app.route('/api/check_timeline', methods=['POST'])
 def check_timeline():
