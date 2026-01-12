@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <link rel="manifest" href="/static/manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#111111">
+
+    <title>RailBridge</title>
+    
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.js"></script>
+
+    <style>
+        /* (これまでのCSSスタイルはすべて維持) */
+        body { margin: 0; padding: 0; font-family: "Helvetica Neue", Arial, sans-serif; background: #111; color: white; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        .view-container { flex: 1; position: relative; overflow: hidden; }
+        .view { width: 100%; height: 100%; display: none; position: absolute; top:0; left:0; }
+        .view.active { display: block; }
+        #map { width: 100%; height: 100%; }
+        #dashboard { position: absolute; bottom: 75px; left: 0; width: 100%; z-index: 10; display: flex; flex-direction: column; justify-content: flex-end; pointer-events: none; padding-bottom: env(safe-area-inset-bottom); }
+        #dashboard > * { pointer-events: auto; }
+        .status-card { background: rgba(20, 20, 25, 0.98); border-top: 1px solid #444; border-radius: 24px 24px 24px 24px; margin: 0 10px; padding: 10px 0 20px 0; box-shadow: 0 10px 30px rgba(0,0,0,0.5); backdrop-filter: blur(15px); max-height: 70vh; min-height: 60px; display: flex; flex-direction: column; touch-action: none; transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1); }
+        .sheet-handle { width: 40px; height: 5px; background: #555; border-radius: 3px; margin: 5px auto 10px auto; flex-shrink: 0; }
+        .sheet-content { padding: 0 20px; overflow-y: auto; flex: 1; }
+        .status-card.safe { border-top: 3px solid #00ff88; }
+        .status-card.danger { border-top: 3px solid #ff3333; background: rgba(30, 10, 10, 0.98); }
+        .card-header { font-size: 11px; text-transform: uppercase; color: #888; letter-spacing: 2px; margin-bottom: 15px; display: block; text-align: center; font-weight: bold; }
+        #alert-box { display: none; background: #222; border: 1px solid #ffaa00; padding: 15px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 5px 15px rgba(0,0,0,0.5); }
+        .timeline-item { position: relative; margin-bottom: 25px; padding-left: 20px; }
+        .timeline-line { position: absolute; left: 4px; top: 8px; bottom: -30px; width: 2px; background: #333; z-index: 0; }
+        .timeline-item:last-child .timeline-line { display: none; }
+        .t-dot { position: absolute; left: 0px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: #00ff88; z-index: 1; box-shadow: 0 0 5px #00ff88; }
+        .t-dot.alert { background: #ff3333; box-shadow: 0 0 5px #ff3333; }
+        .t-row-main { display: flex; justify-content: space-between; align-items: center; }
+        .t-info { flex: 1; }
+        .t-time { font-size: 14px; font-weight: bold; color: #fff; }
+        .t-stations { font-size: 13px; color: #aaa; margin-top: 4px; }
+        .t-congestion { font-size: 11px; margin-top: 6px; display: flex; align-items: center; gap: 6px; color: #ccc; }
+        .con-icon { font-size: 14px; }
+        .test-btn { background: #1a1a1a; border: 1px solid #333; color: #666; font-size: 12px; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .test-btn.active { background: #ff3333; color: white; border-color: #ff3333; box-shadow: 0 0 10px rgba(255, 51, 51, 0.4); }
+        .view-content { background: #111; overflow-y: auto; padding: 20px; box-sizing: border-box; height: 100%; position: relative; padding-bottom: 100px; }
+        .settings-content { max-width: 600px; margin: 0 auto; padding-bottom: 80px; }
+        .settings-header { font-size: 24px; font-weight: 800; margin-bottom: 20px; color: #fff; letter-spacing: -0.5px; }
+        .setting-section { margin-bottom: 30px; background: #1a1a20; padding: 20px; border-radius: 16px; border: 1px solid #333; }
+        .sec-title { font-size: 14px; font-weight: bold; color: #888; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px; }
+        .sec-header { display: flex; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #2a2a2c; padding-bottom: 10px; }
+        .sec-icon { width: 18px; height: 18px; fill: #00ff88; margin-right: 8px; }
+        .style-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        .style-btn { background: #111; border: 1px solid #333; color: #aaa; padding: 12px; border-radius: 10px; cursor: pointer; font-size: 13px; text-align: center; }
+        .style-btn.active { border-color: #00ff88; color: #00ff88; background: rgba(0, 255, 136, 0.05); }
+        .segment-editor { background: #111; padding: 15px; border-radius: 12px; margin-bottom: 15px; border: 1px solid #333; }
+        .segment-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 12px; color: #888; }
+        .segment-row { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
+        .input-group { background: #000; border-radius: 10px; padding: 4px; display: flex; align-items: center; border: 1px solid #333; width: 100%;}
+        select, input { background: #000; color: #fff; border: none; padding: 10px; border-radius: 8px; width: 100%; font-size: 14px; outline: none; }
+        .time-search-btn { background: #333; border: none; color: #fff; padding: 10px 16px; cursor: pointer; border-radius: 8px; font-size: 13px; white-space: nowrap; }
+        .time-candidates { background: #1a1a1a; border: 1px solid #333; max-height: 150px; overflow-y: auto; margin-top: 10px; display: none; border-radius: 8px; }
+        .time-candidate-item { padding: 12px; border-bottom: 1px solid #222; cursor: pointer; font-size: 13px; color: #ccc; }
+        .del-btn { background: #2a1010; color: #ff5555; border: 1px solid #4a1010; padding: 8px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; }
+        .action-row { display: flex; gap: 10px; margin-top: 20px; }
+        .add-btn { background: transparent; color: #888; border: 1px dashed #444; padding: 15px; width: 100%; cursor: pointer; border-radius: 12px; font-size: 14px; }
+        .save-map-btn { flex: 2; background: #00ff88; color: #000; border: none; padding: 15px; font-weight: bold; cursor: pointer; border-radius: 12px; font-size: 14px; }
+        .save-bm-btn { flex: 1; background: #333; color: #fff; border: 1px solid #555; padding: 15px; font-weight: bold; cursor: pointer; border-radius: 12px; font-size: 14px; }
+        .back-btn { background: transparent; border: none; color: #888; font-size: 14px; cursor: pointer; margin-bottom: 15px; display: flex; align-items: center; gap: 5px; font-weight: 600; }
+        .bookmark-item { background: #222; border: 1px solid #333; padding: 15px; border-radius: 12px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .bm-info { flex: 1; }
+        .bm-name { font-weight: bold; font-size: 15px; margin-bottom: 4px; color: #fff; }
+        .bm-detail { font-size: 11px; color: #888; }
+        .bm-actions { display: flex; gap: 10px; }
+        .bm-btn-sm { padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; border: none; }
+        .bm-load { background: #0055ff; color: white; }
+        .bm-edit { background: #444; color: #fff; }
+        .bm-del { background: #331111; color: #ff5555; border: 1px solid #552222; }
+        .fab-btn { position: fixed; bottom: 90px; right: 20px; width: 56px; height: 56px; background: #00ff88; color: #000; border-radius: 50%; border: none; box-shadow: 0 4px 15px rgba(0, 255, 136, 0.4); font-size: 24px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 20; transition: transform 0.2s; }
+        .fab-btn:active { transform: scale(0.95); }
+        .bottom-nav { height: 75px; background: rgba(10, 10, 12, 0.95); border-top: 1px solid #222; display: flex; justify-content: space-around; align-items: center; z-index: 100; backdrop-filter: blur(20px); padding-bottom: env(safe-area-inset-bottom); position: absolute; bottom: 0; width: 100%; }
+        .nav-item { flex: 1; text-align: center; color: #555; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; transition: all 0.2s; }
+        .nav-item.active { color: #00ff88; }
+        .nav-icon-svg { width: 26px; height: 26px; margin-bottom: 4px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: all 0.2s; }
+        .nav-item.active .nav-icon-svg { stroke: #00ff88; fill: rgba(0, 255, 136, 0.1); }
+        .nav-label { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; }
+        .debug-toggle { position: absolute; top: 20px; right: 20px; z-index: 10; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 8px; font-size: 12px; }
+        .mapboxgl-popup-content { color: #000; padding: 10px; border-radius: 8px; }
+        #bm-save-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 9999; justify-content: center; align-items: center; backdrop-filter: blur(5px); }
+        .bm-modal-content { background: #1a1a20; padding: 25px; border-radius: 20px; width: 85%; max-width: 320px; border: 1px solid #444; }
+        .toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #333; }
+        .toggle-row:last-child { border-bottom: none; }
+        .toggle-label { font-size: 14px; }
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #333; transition: .4s; border-radius: 24px; }
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #00ff88; }
+        input:checked + .slider:before { transform: translateX(20px); }
+        .range-val { float: right; color: #00ff88; font-weight: bold; }
+        input[type=range] { width: 100%; margin-top: 10px; accent-color: #00ff88; }
+        .dest-display { font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 10px; display: flex; align-items: center; }
+        .dest-display::before { content: '📍'; margin-right: 8px; font-size: 18px; }
+        
+        /* ★ 新しいスイッチスタイル (Bus vs Bike) */
+        .mode-selector { display: flex; background: #000; border-radius: 12px; padding: 4px; border: 1px solid #333; margin-top: 10px;}
+        .mode-opt { flex: 1; text-align: center; padding: 10px; border-radius: 8px; font-size: 13px; color: #666; cursor: pointer; transition: 0.2s; font-weight: bold; }
+        .mode-opt.active { background: #333; color: #fff; }
+        .mode-opt.active.bike { color: #00ff88; background: rgba(0, 255, 136, 0.1); }
+        .mode-opt.active.bus { color: #3388ff; background: rgba(51, 136, 255, 0.1); }
+    </style>
+</head>
+<body>
+
+<div class="view-container">
+    <div id="view-map" class="view active">
+        <div id="map"></div>
+        <div id="dashboard">
+            <div id="main-card" class="status-card safe">
+                <div class="sheet-handle"></div>
+                <div class="sheet-content">
+                    <div id="alert-box">
+                        <div style="font-weight:bold; margin-bottom:5px; font-size: 13px;" id="alert-title">🚲 BRIDGE MODE</div>
+                        <div id="escape-msg" style="font-size:12px; color:#ccc; line-height:1.4;"></div>
+                    </div>
+                    <span class="card-header">My Timeline</span>
+                    <div class="timeline-container">
+                        <div id="timeline-view"><div style="font-size:12px; color:#555; text-align:center;">ルート未設定</div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="debug-toggle"><label><input type="checkbox" id="teleport-mode"> 📍 Teleport</label></div>
+    </div>
+
+    <div id="view-bookmarks" class="view">
+        <div id="bm-list-view" class="view-content settings-content">
+            <div class="setting-section"><div class="sec-title">ブックマーク</div><div id="bookmark-list-container"></div></div>
+            <button class="fab-btn" onclick="showRouteBuilder(null)">＋</button>
+        </div>
+        <div id="bm-builder-view" class="view-content settings-content" style="display:none;">
+            <button class="back-btn" onclick="hideRouteBuilder()">← 一覧に戻る</button>
+            <div class="setting-section">
+                <div class="sec-header"><span class="sec-title" id="builder-title">ルート設定</span></div>
+                <div style="margin-bottom:15px;">
+                    <div style="font-size:12px; color:#888; margin-bottom:5px;">目的地</div>
+                    <div id="dest-display" class="dest-display">未設定</div>
+                    <div class="dest-input-row" style="display:flex; gap:5px;">
+                        <div class="input-group"><input type="text" id="dest-input" placeholder="例: 東京大学"></div>
+                        <button class="time-search-btn" onclick="searchDest()">検索</button>
+                    </div>
+                </div>
+                <div id="segments-container"></div>
+                <button class="add-btn" onclick="addNewSegment()">＋ 区間を追加</button>
+                <div class="action-row">
+                    <button class="save-map-btn" onclick="saveRoute()">地図に戻る</button>
+                    <button class="save-bm-btn" onclick="openBmSaveModal()">🔖 保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-settings" class="view">
+        <div class="view-content settings-content">
+            <div class="setting-section">
+                <div class="sec-title">地図の外観</div>
+                <div class="style-grid">
+                    <div class="style-btn active" onclick="changeMapStyle('dark-v11', this)">Dark</div>
+                    <div class="style-btn" onclick="changeMapStyle('light-v11', this)">Light</div>
+                    <div class="style-btn" onclick="changeMapStyle('streets-v12', this)">Streets</div>
+                    <div class="style-btn" onclick="changeMapStyle('satellite-streets-v12', this)">Satellite</div>
+                </div>
+            </div>
+            <div class="setting-section">
+                <div class="sec-title">マップオプション</div>
+                <div class="toggle-row"><span class="toggle-label">交通状況(渋滞)を表示</span><label class="switch"><input type="checkbox" id="traffic-toggle" onchange="toggleTraffic(this.checked)"><span class="slider"></span></label></div>
+                
+                <div style="margin-top:20px;">
+                    <span class="toggle-label">遅延時の回避手段</span>
+                    <div class="mode-selector">
+                        <div class="mode-opt active bike" id="opt-bike" onclick="setEscapeMethod('bike')">🚲 シェアサイクル</div>
+                        <div class="mode-opt" id="opt-bus" onclick="setEscapeMethod('bus')">🚌 バス</div>
+                    </div>
+                </div>
+
+                <div style="margin-top:20px;"><div class="toggle-row" style="padding-bottom:0; border:none;"><span class="toggle-label">検索範囲</span><span id="range-val-display" class="range-val">500m</span></div><input type="range" min="100" max="2000" step="100" value="500" oninput="updateRangeVal(this.value)" onchange="saveRangeSetting(this.value)"></div>
+            </div>
+            <div class="setting-section"><div class="sec-title">システム</div><button class="del-btn" style="width:100%; padding:15px; border-color:#ff3333;" onclick="resetAllData()">⚠️ データをすべて初期化</button></div>
+            <div style="color:#666; font-size:12px; text-align:center; margin-top:20px;">Rail Escape v10.4</div>
+        </div>
+    </div>
+</div>
+
+<div id="bm-save-modal">
+    <div class="bm-modal-content">
+        <div style="font-weight:bold; margin-bottom:10px; text-align:center;">ブックマーク名を入力</div>
+        <div class="input-group"><input type="text" id="bm-name-modal-input" placeholder="例: 通勤ルート"></div>
+        <div style="display:flex; gap:10px; margin-top:15px;"><button class="del-btn" style="flex:1" onclick="document.getElementById('bm-save-modal').style.display='none'">キャンセル</button><button class="save-map-btn" style="flex:1; padding:10px;" onclick="commitBookmark()">保存</button></div>
+    </div>
+</div>
+
+<div class="bottom-nav">
+    <div class="nav-item active" onclick="switchTab('map')"><svg class="nav-icon-svg" viewBox="0 0 24 24"><path d="M1 6V22L8 18L16 22L23 18V2L16 6L8 2L1 6Z" /><path d="M8 2V18" /><path d="M16 6V22" /></svg><div class="nav-label">MAP</div></div>
+    <div class="nav-item" onclick="switchTab('bookmarks')"><svg class="nav-icon-svg" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg><div class="nav-label">BOOKMARK</div></div>
+    <div class="nav-item" onclick="switchTab('settings')"><svg class="nav-icon-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg><div class="nav-label">SETTING</div></div>
+</div>
+
+<script>
+    const mainCard = document.getElementById('main-card');
+    let startY = 0, currentY = 0, isDragging = false, isOpen = false;
+    function setSheetY(y, animate = false) { mainCard.style.transition = animate ? 'transform 0.4s cubic-bezier(0.25, 1, 0.5, 1)' : 'none'; mainCard.style.transform = `translateY(${y}px)`; currentY = y; }
+    setTimeout(() => { const h = mainCard.offsetHeight; setSheetY(h - 60, true); }, 500);
+    mainCard.addEventListener('touchstart', (e) => { if (e.target.closest('.test-btn')) return; const c = document.querySelector('.sheet-content'); if (c && c.scrollTop > 0) return; startY = e.touches[0].clientY; isDragging = true; mainCard.style.transition = 'none'; });
+    document.addEventListener('touchmove', (e) => { if (!isDragging) return; const deltaY = e.touches[0].clientY - startY; const h = mainCard.offsetHeight; let newY = isOpen ? deltaY : (h - 60) + deltaY; if (newY > h - 60 + 20) newY = h - 60 + (newY - (h-60)) * 0.2; if (newY < 0) newY = newY * 0.2; setSheetY(newY); });
+    document.addEventListener('touchend', (e) => { if (!isDragging) return; isDragging = false; const h = mainCard.offsetHeight; if (currentY < h / 2) { setSheetY(0, true); isOpen = true; } else { setSheetY(h - 60, true); isOpen = false; } });
+    mainCard.addEventListener('click', (e) => { if (e.target.closest('.test-btn') || isDragging) return; const h = mainCard.offsetHeight; if (isOpen) { setSheetY(h - 60, true); isOpen = false; } else { setSheetY(0, true); isOpen = true; } });
+
+    mapboxgl.accessToken = 'pk.eyJ1IjoiazIzcnMwNzUiLCJhIjoiY21qN3U4d3E4MDBsaTNjb3Bndm8zdjhiNSJ9.zhXdo4UwjmKEb4oBvyBkIw';
+    const map = new mapboxgl.Map({ container: 'map', style: 'mapbox://styles/mapbox/dark-v11', center: [139.700258, 35.690921], zoom: 14, pitch: 45 });
+
+    let currentPos = { lat: 35.690921, lon: 139.700258 };
+    let currentMarker = null, destMarker = null, lastRouteGeoJSON = null;
+    let myRoute = [], finalDest = null, allLines = [], bikeMarkers = [], stationMarkers = [], myBookmarks = [];
+    let searchRadius = 500; 
+    let editingBookmarkId = null;
+    // ★ 回避手段設定
+    let escapeMethod = 'bike'; 
+
+    function setMapJapanese() {
+        const layers = map.getStyle().layers;
+        for (let l of layers) if (l.layout && l.layout['text-field']) map.setLayoutProperty(l.id, 'text-field', ['coalesce', ['get', 'name_ja'], ['get', 'name'], ['get', 'name_en']]);
+    }
+    map.on('style.load', () => { setMapJapanese(); updateDestMarker(); updateLoc(currentPos.lat, currentPos.lon); if (lastRouteGeoJSON) drawBikeRouteRaw(lastRouteGeoJSON); });
+    window.changeMapStyle = (id, el) => { document.querySelectorAll('.style-btn').forEach(b => b.classList.remove('active')); el.classList.add('active'); map.setStyle('mapbox://styles/mapbox/' + id); };
+
+    // ★ 設定切り替え
+    window.setEscapeMethod = function(method) {
+        escapeMethod = method;
+        document.querySelectorAll('.mode-opt').forEach(el => el.classList.remove('active'));
+        document.getElementById('opt-' + method).classList.add('active');
+        localStorage.setItem('my_escape_method', method);
+        checkStatus(); // 反映
+    };
+
+    function autoSave() { localStorage.setItem('my_route_v5', JSON.stringify(myRoute)); localStorage.setItem('my_final_dest', JSON.stringify(finalDest)); }
+    window.toggleTraffic = (c) => {
+        if(c) map.addLayer({'id':'traffic','type':'line','source':{'type':'vector','url':'mapbox://mapbox.mapbox-traffic-v1'},'source-layer':'traffic','paint':{'line-width':2,'line-color':['case',['==',['get','congestion'],'low'],'#00ff00',['==',['get','congestion'],'moderate'],'#ffff00',['==',['get','congestion'],'heavy'],'#ff0000',['==',['get','congestion'],'severe'],'#8b0000','#000000']}});
+        else { if(map.getLayer('traffic')) map.removeLayer('traffic'); if(map.getSource('traffic')) map.removeSource('traffic'); }
+    };
+    window.updateRangeVal = (v) => document.getElementById('range-val-display').innerText = v + "m";
+    window.saveRangeSetting = (v) => { searchRadius = parseInt(v); localStorage.setItem('my_search_radius', v); };
+    window.resetAllData = () => { if(confirm("初期化しますか？")) { localStorage.clear(); location.reload(); } };
+
+    (async function init() {
+        const res = await fetch('/api/lines'); allLines = await res.json();
+        const r = localStorage.getItem('my_route_v5'), d = localStorage.getItem('my_final_dest');
+        if (r) {
+            myRoute = JSON.parse(r);
+            for (let i = 0; i < myRoute.length; i++) {
+                if(myRoute[i].line_id) {
+                    const res = await fetch(`/api/stations_list?line_id=${myRoute[i].line_id}`);
+                    myRoute[i].stationData = await res.json();
+                }
+            }
+        }
+        if (d) finalDest = JSON.parse(d);
+        const bm = localStorage.getItem('my_bookmarks'); if (bm) myBookmarks = JSON.parse(bm);
+        const rad = localStorage.getItem('my_search_radius');
+        if (rad) { searchRadius = parseInt(rad); document.querySelector('input[type=range]').value = rad; updateRangeVal(rad); }
+        
+        // ★ 回避手段のロード
+        const method = localStorage.getItem('my_escape_method');
+        if (method) setEscapeMethod(method); else setEscapeMethod('bike');
+
+        renderDestSetting(); renderAllSegments(); renderBookmarks();
+        
+        const onMapLoad = () => { updateDestMarker(); drawRailLines(); };
+        if (map.loaded()) onMapLoad(); else map.on('load', onMapLoad);
+        if (navigator.geolocation) { navigator.geolocation.getCurrentPosition(p => updateLoc(p.coords.latitude, p.coords.longitude), () => updateLoc(35.690921, 139.700258)); } else { updateLoc(35.690921, 139.700258); }
+    })();
+
+    window.switchTab = (tabName) => {
+        document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        if (tabName === 'map') { document.getElementById('view-map').classList.add('active'); document.querySelector('.nav-item:nth-child(1)').classList.add('active'); map.resize(); }
+        else if (tabName === 'bookmarks') { document.getElementById('view-bookmarks').classList.add('active'); document.querySelector('.nav-item:nth-child(2)').classList.add('active'); hideRouteBuilder(); }
+        else { document.getElementById('view-settings').classList.add('active'); document.querySelector('.nav-item:nth-child(3)').classList.add('active'); }
+    };
+
+    window.showRouteBuilder = (bmId) => {
+        document.getElementById('bm-list-view').style.display = 'none'; document.getElementById('bm-builder-view').style.display = 'block';
+        if (bmId) {
+            editingBookmarkId = bmId;
+            const t = myBookmarks.find(bm => bm.id === bmId);
+            if (t) { myRoute = JSON.parse(JSON.stringify(t.route)); finalDest = t.dest ? JSON.parse(JSON.stringify(t.dest)) : null; document.getElementById('builder-title').innerText = "ルート編集"; }
+        } else {
+            editingBookmarkId = null;
+            myRoute = [{ line_id: "", start_st_id: "", end_st_id: "", time: "08:00", calendar: "Weekday", line_name: "", start_st_name: "", end_st_name: "" }];
+            finalDest = null;
+            document.getElementById('builder-title').innerText = "新規ルート作成";
+        }
+        autoSave(); renderAllSegments(); renderDestSetting();
+    };
+    window.hideRouteBuilder = () => { document.getElementById('bm-builder-view').style.display = 'none'; document.getElementById('bm-list-view').style.display = 'block'; editingBookmarkId = null; };
+    window.openBmSaveModal = () => {
+        if (myRoute.length === 0) { alert("ルートが設定されていません"); return; }
+        if (editingBookmarkId) {
+            const t = myBookmarks.find(bm => bm.id === editingBookmarkId);
+            if(t) document.getElementById('bm-name-modal-input').value = t.name;
+        } else { document.getElementById('bm-name-modal-input').value = ""; }
+        document.getElementById('bm-save-modal').style.display = 'flex';
+    };
+    window.commitBookmark = () => {
+        const name = document.getElementById('bm-name-modal-input').value;
+        if (!name) { alert("名前を入力してください"); return; }
+        const rData = JSON.parse(JSON.stringify(myRoute)); const dData = finalDest ? JSON.parse(JSON.stringify(finalDest)) : null;
+        if (editingBookmarkId) {
+            const idx = myBookmarks.findIndex(bm => bm.id === editingBookmarkId);
+            if (idx !== -1) { myBookmarks[idx].name = name; myBookmarks[idx].route = rData; myBookmarks[idx].dest = dData; }
+        } else {
+            myBookmarks.push({ id: Date.now(), name: name, route: rData, dest: dData });
+        }
+        localStorage.setItem('my_bookmarks', JSON.stringify(myBookmarks));
+        document.getElementById('bm-name-modal-input').value = ""; document.getElementById('bm-save-modal').style.display = 'none';
+        renderBookmarks(); hideRouteBuilder(); alert("保存しました");
+    };
+    window.deleteBookmark = (id) => { if(!confirm("削除しますか？")) return; myBookmarks = myBookmarks.filter(bm => bm.id !== id); localStorage.setItem('my_bookmarks', JSON.stringify(myBookmarks)); renderBookmarks(); };
+    window.loadBookmark = (id) => {
+        const t = myBookmarks.find(bm => bm.id === id); if (!t) return;
+        myRoute = JSON.parse(JSON.stringify(t.route)); finalDest = t.dest ? JSON.parse(JSON.stringify(t.dest)) : null;
+        autoSave(); updateDestMarker(); switchTab('map'); checkStatus();
+    };
+    function renderBookmarks() {
+        const c = document.getElementById('bookmark-list-container'); c.innerHTML = '';
+        if (myBookmarks.length === 0) { c.innerHTML = '<div style="color:#666; font-size:13px; text-align:center; padding:30px;">保存されたルートはありません</div>'; return; }
+        myBookmarks.forEach(bm => {
+            const dName = bm.dest ? bm.dest.name : "目的地なし";
+            const div = document.createElement('div'); div.className = 'bookmark-item';
+            div.innerHTML = `<div class="bm-info"><div class="bm-name">${bm.name}</div><div class="bm-detail">${bm.route.length}区間 | ${dName}</div></div><div class="bm-actions"><button class="bm-btn-sm bm-load" onclick="loadBookmark(${bm.id})">読込</button><button class="bm-btn-sm bm-edit" onclick="showRouteBuilder(${bm.id})">編集</button><button class="bm-btn-sm bm-del" onclick="deleteBookmark(${bm.id})">削除</button></div>`;
+            c.appendChild(div);
+        });
+    }
+
+    async function updateLoc(lat, lon) {
+        currentPos = { lat, lon }; if (currentMarker) currentMarker.remove();
+        const el = document.createElement('div'); el.style.backgroundColor = '#3388ff'; el.style.width = '16px'; el.style.height = '16px'; el.style.borderRadius = '50%'; el.style.border = '3px solid white';
+        currentMarker = new mapboxgl.Marker(el).setLngLat([lon, lat]).addTo(map); checkStatus();
+    }
+    function updateDestMarker() {
+        if (destMarker) destMarker.remove();
+        if (finalDest) {
+            const el = document.createElement('div'); el.style.backgroundColor = '#ff0055'; el.style.width = '20px'; el.style.height = '20px'; el.style.borderRadius = '50%'; el.style.border = '3px solid white'; el.style.boxShadow = '0 0 10px #ff0055';
+            destMarker = new mapboxgl.Marker(el).setLngLat([finalDest.lon, finalDest.lat]).addTo(map);
+            map.flyTo({ center: [finalDest.lon, finalDest.lat], zoom: 12 });
+        }
+    }
+    async function checkStatus() {
+        if (myRoute.length === 0) return;
+        // ★ 回避手段を送る
+        const res = await fetch('/api/check_timeline?lat=' + currentPos.lat + '&lon=' + currentPos.lon + '&method=' + escapeMethod, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(myRoute) });
+        const data = await res.json(); renderTimeline(data); updateRouteStationMarkers(data.timeline);
+        drawRailLines(data.timeline); // Update Colors
+
+        if (data.has_trouble) {
+            const escapeInfo = calculateEscapeRoute(data.timeline);
+            if (escapeInfo) {
+                myRoute[0].bike_target = escapeInfo.target;
+                const res2 = await fetch(`/api/check_timeline?lat=${currentPos.lat}&lon=${currentPos.lon}&method=${escapeMethod}`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(myRoute) });
+                const data2 = await res2.json(); 
+                
+                // ★ 変化するピンとルート
+                updateMapPins(data2.rent_ports, data2.return_ports, escapeInfo);
+                const bestRent = data2.rent_ports.length > 0 ? data2.rent_ports[0] : null;
+                const bestReturn = data2.return_ports.length > 0 ? data2.return_ports[0] : null;
+                
+                if (bestRent && bestReturn) drawBikeRoute({lat: bestRent.lat, lon: bestRent.lon}, {lat: bestReturn.lat, lon: bestReturn.lon});
+                
+                const dName = finalDest ? finalDest.name : '目的地';
+                const methodText = escapeMethod === 'bus' ? 'バス' : 'シェアサイクル';
+                const alertTitle = escapeMethod === 'bus' ? '🚌 BUS MODE' : '🚲 BRIDGE MODE';
+                document.getElementById('alert-title').innerText = alertTitle;
+                document.getElementById('escape-msg').innerHTML = escapeInfo.isDirect ? `<b>${dName}</b> まで${methodText}で直行してください。` : `<b>${escapeInfo.targetName}</b> まで${methodText}で移動し、そこから電車で <b>${dName}</b> へ。`;
+            }
+        } else { clearRoute(); updateMapPins([], [], null); }
+    }
+    function updateRouteStationMarkers(timeline) {
+        stationMarkers.forEach(m => m.remove()); stationMarkers = [];
+        timeline.forEach(item => { if (item.start_geo) { const el = document.createElement('div'); el.innerHTML = '🚉'; el.style.fontSize = '24px'; el.style.cursor = 'pointer'; el.style.filter = 'drop-shadow(0 0 2px rgba(0,0,0,0.8))'; const m = new mapboxgl.Marker(el).setLngLat([item.start_geo.lon, item.start_geo.lat]).setPopup(new mapboxgl.Popup({offset: 25}).setHTML(`<div style="color:#000;"><b>${item.start_station}</b><br>${item.line_name}</div>`)).addTo(map); stationMarkers.push(m); } });
+    }
+    function calculateEscapeRoute(timeline) {
+        let brokenIdx = timeline.findIndex(t => t.alert); if (brokenIdx === -1) return null;
+        let nextLive = timeline.slice(brokenIdx + 1).find(t => !t.alert && t.start_geo);
+        if (nextLive) return { target: nextLive.start_geo, targetName: nextLive.start_station, isDirect: false };
+        if (finalDest) return { target: {lat: finalDest.lat, lon: finalDest.lon}, targetName: finalDest.name, isDirect: true };
+        return null;
+    }
+    async function drawBikeRoute(start, end) {
+        // ★ バスモードなら driving, バイクなら cycling
+        const profile = escapeMethod === 'bus' ? 'driving' : 'cycling';
+        const q = await fetch(`https://api.mapbox.com/directions/v5/mapbox/${profile}/${start.lon},${start.lat};${end.lon},${end.lat}?geometries=geojson&access_token=${mapboxgl.accessToken}`);
+        const j = await q.json(); lastRouteGeoJSON = { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: j.routes[0].geometry.coordinates } };
+        drawBikeRouteRaw(lastRouteGeoJSON);
+    }
+    function drawBikeRouteRaw(geojson) { 
+        if (map.getSource('route')) map.getSource('route').setData(geojson); 
+        else map.addLayer({ id: 'route', type: 'line', source: { type: 'geojson', data: geojson }, paint: { 'line-color': escapeMethod === 'bus' ? '#3388ff' : '#00ff88', 'line-width': 4, 'line-opacity': 0.8 } }); 
+    }
+    function clearRoute() { lastRouteGeoJSON = null; if(map.getLayer('route')) { map.removeLayer('route'); map.removeSource('route'); } }
+    
+    function updateMapPins(rent, ret, escape) {
+        bikeMarkers.forEach(m => m.remove()); bikeMarkers = [];
+        const isBus = escapeMethod === 'bus';
+        
+        rent.concat(ret).forEach(b => {
+            const isRent = rent.includes(b);
+            const color = isRent ? (isBus ? '#3388ff' : '#00ff88') : '#ffaa00';
+            const icon = isBus ? '🚏' : '🚲';
+            const label = isBus ? 'バス停' : 'ポート';
+            
+            const el = document.createElement('div');
+            el.innerHTML = icon; el.style.fontSize = "20px";
+            el.style.backgroundColor = 'white'; el.style.borderRadius = '50%'; el.style.width='30px'; el.style.height='30px'; el.style.display='flex'; el.style.justifyContent='center'; el.style.alignItems='center'; el.style.border = `2px solid ${color}`;
+            
+            const popup = new mapboxgl.Popup({offset: 25}).setHTML(`<div style="color:#000;"><b>${b.name}</b><br>${label}</div>`);
+            const m = new mapboxgl.Marker(el).setLngLat([b.lon, b.lat]).setPopup(popup).addTo(map);
+            bikeMarkers.push(m);
+        });
+        // 目的地ピン (電車復帰点)
+        if (escape && !escape.isDirect && escape.target) {
+            const stEl = document.createElement('div'); stEl.innerHTML = '🚉'; stEl.style.fontSize = '24px'; stEl.style.cursor = 'pointer';
+            const stM = new mapboxgl.Marker(stEl).setLngLat([escape.target.lon, escape.target.lat]).setPopup(new mapboxgl.Popup().setHTML(`<div style="color:#000; padding:5px;"><b style="font-size:14px;">${escape.targetName}</b><br><span style="color:#3388ff;">ここから電車に復帰します</span></div>`)).addTo(map);
+            bikeMarkers.push(stM);
+        }
+    }
+
+    function renderDestSetting() { document.getElementById('dest-display').innerText = finalDest ? finalDest.name : "未設定"; }
+    window.searchDest = async () => {
+        const q = document.getElementById('dest-input').value; if(!q) return;
+        const res = await fetch(`/api/search_place?q=${encodeURIComponent(q)}`); const data = await res.json();
+        if(!data.error) { finalDest = data; autoSave(); renderDestSetting(); updateDestMarker(); }
+    }
+    window.searchTime = async (idx) => {
+        const seg = myRoute[idx]; if (!seg.line_id || !seg.start_st_id) { alert("路線と駅を選んでください"); return; }
+        const res = await fetch(`/api/station_timetable?station_id=${seg.start_st_id}&line_id=${seg.line_id}&time=${seg.time}&calendar=${seg.calendar}`);
+        const candidates = await res.json();
+        const cList = document.getElementById(`candidates-${idx}`); cList.innerHTML = ''; cList.style.display = 'block';
+        if(candidates.length === 0) { cList.innerHTML = '<div style="padding:10px;">データなし</div>'; return; }
+        candidates.forEach(c => {
+            const div = document.createElement('div'); div.className = 'time-candidate-item'; div.innerText = `${c.time} 発 (${c.type}) 行き先:${c.dest}`;
+            div.onclick = () => { document.getElementById(`time-${idx}`).value = c.time; myRoute[idx].time = c.time; autoSave(); cList.style.display = 'none'; };
+            cList.appendChild(div);
+        });
+    }
+    function renderAllSegments() {
+        const container = document.getElementById('segments-container'); container.innerHTML = '';
+        if (myRoute.length === 0) addNewSegment(); else myRoute.forEach((seg, idx) => container.appendChild(createSegmentRow(idx, seg)));
+    }
+    window.addNewSegment = () => { myRoute.push({ line_id: "", start_st_id: "", end_st_id: "", time: "08:00", calendar: "Weekday", line_name: "", start_st_name: "", end_st_name: "" }); autoSave(); renderAllSegments(); }
+    window.removeSegment = (idx) => { myRoute.splice(idx, 1); autoSave(); renderAllSegments(); }
+    window.updateSegmentValue = (idx, key, selectEl) => {
+        const val = selectEl.value; const name = selectEl.options[selectEl.selectedIndex].text;
+        myRoute[idx][key] = val;
+        if (key === 'line_id') { myRoute[idx].line_name = name; loadStations(idx, val); }
+        else if (key === 'start_st_id') myRoute[idx].start_st_name = name;
+        else if (key === 'end_st_id') myRoute[idx].end_st_name = name;
+        autoSave();
+        if(key !== 'line_id') drawRailLines(null);
+    }
+    window.updateTime = (idx, val) => { myRoute[idx].time = val; autoSave(); }
+    function createSegmentRow(idx, seg) {
+        const div = document.createElement('div'); div.className = 'segment-editor';
+        div.id = `segment-row-${idx}`;
+        let lineOpts = `<option value="">路線選択</option>` + allLines.map(l => `<option value="${l.id}" ${l.id===seg.line_id?'selected':''}>${l.name}</option>`).join('');
+        div.innerHTML = `<div class="segment-header"><span>区間 ${idx + 1}</span><span style="color:#ff5555;cursor:pointer;" onclick="removeSegment(${idx})">削除</span></div><div class="segment-row"><div class="input-group"><select onchange="updateSegmentValue(${idx}, 'line_id', this)">${lineOpts}</select></div></div><div class="segment-row"><div class="input-group"><select id="start-${idx}" onchange="updateSegmentValue(${idx}, 'start_st_id', this)"><option value="${seg.start_st_id || ''}">${seg.start_st_name || '乗車駅'}</option></select></div><div style="display:flex;align-items:center;">➡</div><div class="input-group"><select id="end-${idx}" onchange="updateSegmentValue(${idx}, 'end_st_id', this)"><option value="${seg.end_st_id || ''}">${seg.end_st_name || '降車駅'}</option></select></div></div><div class="segment-row"><div class="input-group"><input type="time" id="time-${idx}" value="${seg.time}" onchange="updateTime(${idx}, this.value)"></div><button class="time-search-btn" onclick="searchTime(${idx})">🔍 時刻表</button></div><div id="candidates-${idx}" class="time-candidates"></div>`;
+        if(seg.line_id) loadStations(idx, seg.line_id); return div;
+    }
+    async function loadStations(idx, lineId) {
+        const res = await fetch(`/api/stations_list?line_id=${lineId}`); const stations = await res.json();
+        myRoute[idx].stationData = stations; autoSave();
+        const sSel = document.getElementById(`start-${idx}`), eSel = document.getElementById(`end-${idx}`); if (!sSel || !eSel) return;
+        const generateOpts = (currentId, placeholder) => { let opts = `<option value="">${placeholder}</option>`; stations.forEach(s => { opts += `<option value="${s.id}" ${s.id === currentId ? 'selected' : ''}>${s.name}</option>`; }); return opts; };
+        sSel.innerHTML = generateOpts(myRoute[idx].start_st_id, '乗車駅'); eSel.innerHTML = generateOpts(myRoute[idx].end_st_id, '降車駅');
+        drawRailLines(null);
+    }
+    
+    // ★ 鉄道ライン描画 (色変更対応)
+    function drawRailLines(timelineData) {
+        if (!map.isStyleLoaded()) { setTimeout(() => drawRailLines(timelineData), 1000); return; }
+        if (map.getLayer('rail-line')) map.removeLayer('rail-line'); if (map.getSource('rail-line')) map.removeSource('rail-line');
+        const features = [];
+        myRoute.forEach((seg, idx) => {
+            if (!seg.line_id || !seg.start_st_id || !seg.end_st_id || !seg.stationData) return;
+            const stations = seg.stationData;
+            let start = stations.findIndex(s => s.id === seg.start_st_id), end = stations.findIndex(s => s.id === seg.end_st_id);
+            if (start === -1 || end === -1) return;
+            if (start > end) { let t = start; start = end; end = t; }
+            const coords = []; for (let i = start; i <= end; i++) { if (stations[i].lat) coords.push([stations[i].lon, stations[i].lat]); }
+            let color = '#FFB300'; 
+            if (timelineData && timelineData[idx] && timelineData[idx].alert) color = '#FF3333';
+            if (coords.length > 1) features.push({ 'type': 'Feature', 'properties': {'color': color}, 'geometry': { 'type': 'LineString', 'coordinates': coords } });
+        });
+        if (features.length === 0) return;
+        map.addSource('rail-line', { 'type': 'geojson', 'data': { 'type': 'FeatureCollection', 'features': features } });
+        map.addLayer({ 'id': 'rail-line', 'type': 'line', 'source': 'rail-line', 'layout': { 'line-join': 'round', 'line-cap': 'round' }, 'paint': { 'line-color': ['get', 'color'], 'line-width': 5, 'line-opacity': 0.8 } }); // No dashboard arg
+    }
+
+    function renderTimeline(data) {
+        const container = document.getElementById('timeline-view'); container.innerHTML = '';
+        mainCard.className = 'status-card ' + (data.has_trouble ? 'danger' : 'safe');
+        document.getElementById('alert-box').style.display = data.has_trouble ? 'block' : 'none';
+        data.timeline.forEach((item, idx) => {
+            const con = item.congestion || {level:0, msg:"情報なし", train_count:0};
+            let conColor = '#888'; if(con.level===3) conColor = '#ff3333'; else if(con.level===2) conColor = '#ffaa00'; else if(con.level===1) conColor = '#00ff88';
+            container.innerHTML += `<div class="timeline-item"><div class="timeline-line"></div><div class="t-dot ${item.alert?'alert':''}"></div><div class="t-row-main"><div class="t-info"><div><span class="t-time">${item.time}発</span><span class="t-route">${item.line_name}</span></div><div class="t-stations">${item.start_station} ➡ ${item.end_station}</div><div class="t-congestion" style="color:${conColor}"><span class="con-icon">👥</span> <span>${con.msg}</span><span style="font-size:10px; opacity:0.7; margin-left:5px;">(走行中: ${con.train_count}本)</span></div></div><button class="test-btn ${myRoute[idx].force_delay?'active':''}" onclick="toggleDebugDelay(event, ${idx})">🧪</button></div></div>`;
+            
+            // ★ バス代替案の表示（乗車バス停と到着バス停を1つにまとめ）
+            if (data.bus_alternative && data.bus_alternative.alert_idx === idx && item.alert && escapeMethod === 'bus') {
+                const busInfo = data.bus_alternative;
+                container.innerHTML += `<div class="timeline-item" style="margin-left:15px; opacity:0.95;"><div class="timeline-line" style="background:#3388ff;"></div><div class="t-dot" style="background:#3388ff; box-shadow:0 0 5px #3388ff; left:0px;"></div><div class="t-row-main"><div class="t-info"><div><span class="t-time">${busInfo.original_time}発</span><span class="t-route" style="color:#3388ff;">🚌 ${busInfo.start_bus_line}</span></div><div class="t-stations" style="color:#ccc;"><b>${busInfo.start_bus_stop}</b> (${busInfo.start_bus_dest}方面) ➡ <b>${busInfo.end_bus_stop}</b></div><div class="t-congestion" style="color:#33ccff; font-size:12px;"><span>🚏 ${busInfo.arrival_time}着 / 乗車時間: 約${busInfo.travel_time}分</span></div></div></div></div>`;
+            }
+        });
+    }
+    window.toggleDebugDelay = (e, idx) => { e.stopPropagation(); myRoute[idx].force_delay = !myRoute[idx].force_delay; checkStatus(); }
+    map.on('click', (e) => { if (document.getElementById('teleport-mode').checked) updateLoc(e.lngLat.lat, e.lngLat.lng); });
+</script>
+</body>
+</html>
+
